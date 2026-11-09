@@ -5,8 +5,7 @@ public sealed class Mercado
     private readonly Carteira carteira;
     private readonly List<Transacao> historico = [];
     public IReadOnlyList<Transacao> Historico => historico.AsReadOnly();
-    public decimal PatrimonioTotal => decimal.Round(
-        carteira.SaldoBrl + carteira.SaldoBtc * Cotacao, 2, MidpointRounding.AwayFromZero);
+    public decimal PatrimonioTotal => ArredondarReais(carteira.SaldoBrl + carteira.SaldoBtc * Cotacao);
     public decimal Cotacao { get; private set; }
 
     public Mercado(Carteira carteira, decimal cotacao)
@@ -24,10 +23,11 @@ public sealed class Mercado
     public void Comprar(decimal quantidadeBtc)
     {
         var total = CalcularTotal(quantidadeBtc);
+        // Valida também o crédito antes de debitar, preservando os saldos em caso de overflow.
         _ = carteira.SaldoBtc + quantidadeBtc;
         carteira.DebitarBrl(total);
         carteira.CreditarBtc(quantidadeBtc);
-        historico.Add(new Transacao(TipoTransacao.Compra, quantidadeBtc, Cotacao, total, DateTimeOffset.UtcNow));
+        Registrar(TipoTransacao.Compra, quantidadeBtc, total);
     }
 
     public void Vender(decimal quantidadeBtc)
@@ -36,14 +36,20 @@ public sealed class Mercado
         _ = carteira.SaldoBrl + total;
         carteira.DebitarBtc(quantidadeBtc);
         carteira.CreditarBrl(total);
-        historico.Add(new Transacao(TipoTransacao.Venda, quantidadeBtc, Cotacao, total, DateTimeOffset.UtcNow));
+        Registrar(TipoTransacao.Venda, quantidadeBtc, total);
     }
 
     private decimal CalcularTotal(decimal quantidadeBtc)
     {
         Carteira.Validar(quantidadeBtc, 8);
-        var total = decimal.Round(quantidadeBtc * Cotacao, 2, MidpointRounding.AwayFromZero);
+        var total = ArredondarReais(quantidadeBtc * Cotacao);
         if (total == 0) throw new ArgumentException("O valor da operação deve ser de pelo menos R$ 0,01.");
         return total;
     }
+
+    private void Registrar(TipoTransacao tipo, decimal quantidadeBtc, decimal totalBrl) =>
+        historico.Add(new Transacao(tipo, quantidadeBtc, Cotacao, totalBrl, DateTimeOffset.UtcNow));
+
+    private static decimal ArredondarReais(decimal valor) =>
+        decimal.Round(valor, 2, MidpointRounding.AwayFromZero);
 }
